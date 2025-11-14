@@ -1,152 +1,274 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+import { useState, useEffect } from "react"
+import { AlertCircle, Bell, Plus, X, RefreshCw } from "lucide-react"
+import { noticeService, type Notice } from "@/lib/services/notice-service"
 
 export default function NoticesPage() {
-  const [posts, setPosts] = useState([
-    {
-      id: 1,
-      content: "Payment released for October milk collection. Please verify your account.",
-      image: null,
-      date: "2025-10-31",
-      time: "14:30",
-    },
-    {
-      id: 2,
-      content: "New milk quality standards implemented. SNF minimum increased to 8.0%",
-      image: "/dairy-milk-quality-standards.jpg",
-      date: "2025-10-30",
-      time: "10:15",
-    },
-    {
-      id: 3,
-      content: "Scheduled maintenance on collection center on November 5th. No collections will be accepted.",
-      image: null,
-      date: "2025-10-29",
-      time: "09:00",
-    },
-    {
-      id: 4,
-      content: "Monthly bonus distribution schedule announced. Check your account for details.",
-      image: "/announcement-bonus-distribution.jpg",
-      date: "2025-10-28",
-      time: "15:45",
-    },
-  ])
+  const [notices, setNotices] = useState<Notice[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [successMessage, setSuccessMessage] = useState("")
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const [postContent, setPostContent] = useState("")
-  const [selectedImage, setSelectedImage] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
+  // Form fields
+  const [title, setTitle] = useState("")
+  const [content, setContent] = useState("")
 
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setSelectedImage(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result)
-      }
-      reader.readAsDataURL(file)
+  const loadNotices = async () => {
+    setIsLoading(true)
+    setError("")
+    try {
+      const data = await noticeService.getAllNotices()
+      setNotices(data)
+    } catch (err: any) {
+      console.error("[LOAD NOTICES ERROR]", err)
+      setError(err.message || "Failed to load notices")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handlePost = () => {
-    if (postContent.trim()) {
-      const newPost = {
-        id: posts.length + 1,
-        content: postContent,
-        image: imagePreview,
-        date: new Date().toISOString().split("T")[0],
-        time: new Date().toTimeString().split(" ")[0].substring(0, 5),
-      }
-      setPosts([newPost, ...posts])
-      setPostContent("")
-      setSelectedImage(null)
-      setImagePreview(null)
+  useEffect(() => {
+    loadNotices()
+  }, [])
+
+  const handleAddNotice = async () => {
+    if (!title.trim() || !content.trim()) {
+      setError("Please fill in all fields")
+      return
     }
+
+    setIsSubmitting(true)
+    setError("")
+    try {
+      await noticeService.createNotice({
+        title: title.trim(),
+        content: content.trim(),
+      })
+
+      setSuccessMessage("Notice posted successfully!")
+      setShowAddModal(false)
+      setTitle("")
+      setContent("")
+
+      // Reload notices
+      await loadNotices()
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccessMessage("")
+      }, 3000)
+    } catch (err: any) {
+      console.error("[ADD NOTICE ERROR]", err)
+      setError(err.message || "Failed to post notice")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="max-w-3xl mx-auto space-y-8">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-slate-900">Notices & Updates</h1>
-          <p className="text-slate-600 text-lg">Post announcements and important updates for all farmers</p>
+    <div className="min-h-screen bg-slate-50 py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="mb-6 flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+              <Bell className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900 mb-1">Notices & Updates</h1>
+              <p className="text-sm text-slate-600">Post announcements and important updates for all farmers</p>
+            </div>
+          </div>
+
+          {/* Add Notice Button */}
+          <button
+            onClick={() => {
+              setShowAddModal(true)
+              setError("")
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Notice
+          </button>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-8">
-          <textarea
-            value={postContent}
-            onChange={(e) => setPostContent(e.target.value)}
-            placeholder="Share an important announcement with farmers..."
-            className="w-full p-4 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900 bg-slate-50 resize-none placeholder-slate-500 text-base leading-relaxed"
-            rows={4}
-          />
+        {/* Success Message */}
+        {successMessage && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+            <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+              <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <p className="text-sm text-green-700 font-medium">{successMessage}</p>
+          </div>
+        )}
 
-          {imagePreview && (
-            <div className="mt-6 relative rounded-lg overflow-hidden border border-slate-200">
-              <img
-                src={imagePreview || "/placeholder.svg"}
-                alt="Preview"
-                className="max-h-64 rounded-lg object-cover w-full"
-              />
+        {/* Error Message */}
+        {error && !showAddModal && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {isLoading && (
+          <div className="p-12 text-center bg-white rounded-lg shadow-sm border">
+            <RefreshCw className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-4" />
+            <p className="text-slate-600">Loading notices...</p>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && notices.length === 0 && (
+          <div className="p-12 text-center bg-white rounded-lg shadow-sm border">
+            <Bell className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-600 mb-2">No notices posted yet</p>
+            <p className="text-sm text-slate-500">Click "Add New Notice" to create your first notice</p>
+          </div>
+        )}
+
+        {/* Notices List */}
+        {!isLoading && notices.length > 0 && (
+          <div className="space-y-4">
+            {notices.map((notice) => (
+              <div
+                key={notice.id}
+                className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-6"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-slate-900">{notice.title}</h3>
+                  <span className="text-xs text-slate-500 whitespace-nowrap ml-4">
+                    {formatDate(notice.postedAt)}
+                  </span>
+                </div>
+                <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{notice.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add Notice Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-slate-900">Add New Notice</h2>
               <button
                 onClick={() => {
-                  setImagePreview(null)
-                  setSelectedImage(null)
+                  setShowAddModal(false)
+                  setTitle("")
+                  setContent("")
+                  setError("")
                 }}
-                className="absolute top-3 right-3 bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors shadow-lg"
+                disabled={isSubmitting}
+                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
               >
-                Remove
+                <X className="w-5 h-5" />
               </button>
             </div>
-          )}
 
-          <div className="flex gap-4 mt-6">
-            <label className="px-6 py-3 border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 transition-colors cursor-pointer bg-white">
-              Add Image
-              <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-            </label>
-            <button
-              onClick={handlePost}
-              disabled={!postContent.trim()}
-              className="ml-auto px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md"
-            >
-              Post Notice
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          {posts.map((post) => (
-            <div
-              key={post.id}
-              className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
-            >
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-center">
-                  <div className="text-sm font-medium text-slate-600">
-                    {post.date} at {post.time}
-                  </div>
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              {/* Error Message */}
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+                  <p className="text-sm text-red-700">{error}</p>
                 </div>
+              )}
 
-                {/* Post content */}
-                <p className="text-slate-800 leading-relaxed text-base font-medium">{post.content}</p>
+              {/* Title Field */}
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-2">
+                  Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="title"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g., New disease alert"
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+                />
+              </div>
 
-                {post.image && (
-                  <div className="mt-4 -mx-6 -mb-6">
-                    <img
-                      src={post.image || "/placeholder.svg"}
-                      alt="Post"
-                      className="rounded-b-xl object-cover max-h-96 w-full"
-                    />
-                  </div>
-                )}
+              {/* Content Field */}
+              <div>
+                <label htmlFor="content" className="block text-sm font-medium text-slate-700 mb-2">
+                  Content <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  id="content"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Enter the notice details..."
+                  rows={6}
+                  disabled={isSubmitting}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none disabled:opacity-50 disabled:bg-gray-50"
+                />
               </div>
             </div>
-          ))}
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowAddModal(false)
+                  setTitle("")
+                  setContent("")
+                  setError("")
+                }}
+                disabled={isSubmitting}
+                className="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-all duration-200 font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddNotice}
+                disabled={isSubmitting || !title.trim() || !content.trim()}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    Post Notice
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

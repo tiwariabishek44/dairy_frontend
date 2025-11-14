@@ -1,9 +1,20 @@
 export const formatAmount = (amount: number): string => {
-  const amountStr = Math.round(amount).toString()
-  const lastThree = amountStr.slice(-3)
-  const otherNumbers = amountStr.slice(0, -3)
+  // Split the number into integer and decimal parts
+  const parts = amount.toFixed(1).split(".")
+  const integerPart = parts[0]
+  const decimalPart = parts[1]
 
-  if (otherNumbers === "") return lastThree
+  // Format the integer part with Indian comma style
+  const lastThree = integerPart.slice(-3)
+  const otherNumbers = integerPart.slice(0, -3)
 
-  return otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree
+  let formattedInteger = ""
+  if (otherNumbers === "") {
+    formattedInteger = lastThree
+  } else {
+    formattedInteger = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree
+  }
+
+  // Return with decimal part
+  return formattedInteger + "." + decimalPart
 }

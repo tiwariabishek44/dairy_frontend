@@ -2,14 +2,14 @@
 
 import { Upload } from "lucide-react"
 import { useState, useMemo } from "react"
-import { gregorianToNepali } from "@/lib/nepali-date"
+import NepaliDate from "nepali-date-converter"
 
 export default function PaymentsPage() {
   const now = new Date()
-  const nepaliNow = gregorianToNepali(now)
+  const nepaliNow = new NepaliDate(now)
 
-  const [currentMonth, setCurrentMonth] = useState(nepaliNow.month)
-  const [currentYear, setCurrentYear] = useState(nepaliNow.year)
+  const [currentMonth, setCurrentMonth] = useState(nepaliNow.getMonth() + 1)
+  const [currentYear, setCurrentYear] = useState(nepaliNow.getYear())
   const [period, setPeriod] = useState(now.getDate() < 15 ? "first" : "second")
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 50

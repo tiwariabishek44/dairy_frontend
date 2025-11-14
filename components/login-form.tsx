@@ -3,9 +3,10 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { authService } from "@/lib/services/auth-service"
 
 interface LoginFormProps {
   onSuccess: () => void
@@ -16,18 +17,38 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    // Simulate login process
+    setError("")
     setIsLoading(true)
-    setTimeout(() => {
+
+    try {
+      // Call the actual API using auth service
+      const response = await authService.login({
+        email: email.trim(),
+        password: password,
+      })
+
+      if (response.success) {
+        // Clear form and call success callback
+        setEmail("")
+        setPassword("")
+        onSuccess()
+      } else {
+        // Handle unsuccessful response
+        setError(response.message || "Login failed. Please try again.")
+      }
+    } catch (err: any) {
+      // Handle API errors
+      console.error("Login error:", err)
+      setError(
+        err.message || "Unable to connect to server. Please check your connection."
+      )
+    } finally {
       setIsLoading(false)
-      onSuccess()
-      setEmail("")
-      setPassword("")
-    }, 1000)
+    }
   }
 
   return (
@@ -38,6 +59,14 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Error Message */}
+        {error && (
+          <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
         {/* Email Field */}
         <div className="space-y-2">
           <label htmlFor="email" className="block text-sm font-medium text-gray-700">
@@ -50,6 +79,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="email"
             className="h-11 px-4 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
           />
         </div>
@@ -67,6 +97,7 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
               className="h-11 px-4 border-gray-200 focus:border-blue-500 focus:ring-blue-500 pr-10"
             />
             <button

@@ -1,0 +1,351 @@
+// Web Worker for parsing Excel/CSV files in background thread
+// This prevents UI freezing during heavy processing
+
+import * as XLSX from "xlsx";
+
+export interface MilkRecord {
+  Sr_no: string;
+  Coll_Date: string;
+  Ne_date: string;
+  Ses_code: string;
+  Coll_time: string;
+  Mem_code: string;
+  Category: string;
+  Volume_lt: string;
+  Fat_per: string;
+  Clr: string;
+  Snf: string;
+  Protien: string;
+  Kg_fat: string;
+  Kg_snf: string;
+  Rate: string;
+  Kg_rate: string;
+  Snf_rate: string;
+  Ts_comm: string;
+  Amount: string;
+  Remark: string;
+}
+
+interface ParseMessage {
+  type: "parse";
+  fileData: ArrayBuffer;
+  fileName: string;
+  filterDate?: string;
+  chunkSize?: number;
+}
+
+interface ProgressMessage {
+  type: "progress";
+  progress: number;
+  message: string;
+  phase: "reading" | "parsing" | "filtering" | "complete";
+}
+
+interface ResultMessage {
+  type: "result";
+  records: MilkRecord[];
+  stats: {
+    totalRecords: number;
+    filteredRecords: number;
+    uniqueDates: number;
+    dateRange: { earliest: string; latest: string } | null;
+    processingTime: number;
+  };
+}
+
+interface ErrorMessage {
+  type: "error";
+  error: string;
+}
+
+type WorkerMessage = ProgressMessage | ResultMessage | ErrorMessage;
+
+// Listen for messages from main thread
+self.onmessage = async (e: MessageEvent<ParseMessage>) => {
+  const { type, fileData, fileName, filterDate, chunkSize = 1000 } = e.data;
+
+  if (type === "parse") {
+    try {
+      const startTime = performance.now();
+
+      // Send initial progress
+      postProgress(0, "Starting file processing...", "reading");
+
+      // Parse the file based on extension
+      const extension = fileName.split(".").pop()?.toLowerCase();
+      let allRecords: MilkRecord[] = [];
+      let filteredRecords: MilkRecord[] = [];
+      const allDates = new Set<string>();
+
+      if (extension === "csv") {
+        const result = await parseCSVInChunks(
+          fileData,
+          filterDate,
+          chunkSize
+        );
+        allRecords = result.allRecords;
+        filteredRecords = result.filteredRecords;
+        result.dates.forEach((d) => allDates.add(d));
+      } else if (extension === "xlsx" || extension === "xls") {
+        const result = await parseExcelInChunks(
+          fileData,
+          filterDate,
+          chunkSize
+        );
+        allRecords = result.allRecords;
+        filteredRecords = result.filteredRecords;
+        result.dates.forEach((d) => allDates.add(d));
+      } else {
+        throw new Error("Unsupported file format");
+      }
+
+      const endTime = performance.now();
+      const processingTime = Math.round(endTime - startTime);
+
+      // Sort dates to find range
+      const sortedDates = Array.from(allDates).sort();
+
+      // Send final result
+      const result: ResultMessage = {
+        type: "result",
+        records: filteredRecords,
+        stats: {
+          totalRecords: allRecords.length,
+          filteredRecords: filteredRecords.length,
+          uniqueDates: allDates.size,
+          dateRange:
+            sortedDates.length > 0
+              ? {
+                  earliest: sortedDates[0],
+                  latest: sortedDates[sortedDates.length - 1],
+                }
+              : null,
+          processingTime,
+        },
+      };
+
+      postMessage(result);
+
+      // Clear memory
+      allRecords = [];
+      filteredRecords = [];
+      allDates.clear();
+    } catch (error: any) {
+      const errorMsg: ErrorMessage = {
+        type: "error",
+        error: error.message || "Unknown error during parsing",
+      };
+      postMessage(errorMsg);
+    }
+  }
+};
+
+// CSV Parser with chunking
+async function parseCSVInChunks(
+  fileData: ArrayBuffer,
+  filterDate: string | undefined,
+  chunkSize: number
+) {
+  postProgress(10, "Reading CSV file...", "reading");
+
+  const decoder = new TextDecoder("utf-8");
+  const text = decoder.decode(fileData);
+  const lines = text.split("\n");
+
+  postProgress(30, "Parsing CSV data...", "parsing");
+
+  const allRecords: MilkRecord[] = [];
+  const filteredRecords: MilkRecord[] = [];
+  const dates = new Set<string>();
+
+  // Skip header (line 0)
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    // Parse CSV line (handle quoted values)
+    const values = parseCSVLine(line);
+
+    // Ne_date is at index 2
+    const neDate = values[2]?.trim() || "";
+    if (neDate) dates.add(neDate);
+
+    if (values.length >= 19) {
+      const record = createMilkRecord(values);
+
+      // Filter during parsing (single pass!)
+      if (!filterDate || neDate === filterDate) {
+        filteredRecords.push(record);
+      }
+
+      // Only keep in allRecords for stats (we don't return this)
+      // To save memory, we just count
+    }
+
+    // Report progress every chunk
+    if (i % chunkSize === 0) {
+      const progress = 30 + Math.round((i / lines.length) * 60);
+      postProgress(
+        progress,
+        `Processing row ${i.toLocaleString()} of ${lines.length.toLocaleString()}...`,
+        "parsing"
+      );
+
+      // Yield to event loop to prevent blocking
+      await sleep(0);
+    }
+  }
+
+  postProgress(95, "Finalizing results...", "filtering");
+
+  return {
+    allRecords: [], // Don't return all records to save memory
+    filteredRecords,
+    dates,
+  };
+}
+
+// Excel Parser with chunking
+async function parseExcelInChunks(
+  fileData: ArrayBuffer,
+  filterDate: string | undefined,
+  chunkSize: number
+) {
+  postProgress(10, "Reading Excel file...", "reading");
+
+  // Use ArrayBuffer directly (faster than binary string)
+  const workbook = XLSX.read(fileData, {
+    type: "array",
+    cellDates: false,
+    cellText: true,
+  });
+
+  postProgress(30, "Parsing Excel data...", "parsing");
+
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+
+  // Get sheet dimensions
+  const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+  const totalRows = range.e.r + 1;
+
+  const filteredRecords: MilkRecord[] = [];
+  const dates = new Set<string>();
+
+  // Process in chunks to avoid memory overflow
+  for (let row = 1; row < totalRows; row++) {
+    // Skip header (row 0)
+    const values: string[] = [];
+
+    // Read row cells (assuming up to column T = 20 columns)
+    for (let col = 0; col < 20; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = worksheet[cellAddress];
+      values.push(cell ? String(cell.v || "").trim() : "");
+    }
+
+    // Check if row is empty
+    if (values.every((v) => !v)) continue;
+
+    // Ne_date is at index 2
+    const neDate = values[2]?.trim() || "";
+    if (neDate) dates.add(neDate);
+
+    if (values.length >= 19) {
+      // Filter during parsing (single pass!)
+      if (!filterDate || neDate === filterDate) {
+        filteredRecords.push(createMilkRecord(values));
+      }
+    }
+
+    // Report progress every chunk
+    if (row % chunkSize === 0) {
+      const progress = 30 + Math.round((row / totalRows) * 60);
+      postProgress(
+        progress,
+        `Processing row ${row.toLocaleString()} of ${totalRows.toLocaleString()}...`,
+        "parsing"
+      );
+
+      // Yield to event loop
+      await sleep(0);
+    }
+  }
+
+  postProgress(95, "Finalizing results...", "filtering");
+
+  return {
+    allRecords: [], // Don't return all records to save memory
+    filteredRecords,
+    dates,
+  };
+}
+
+// Helper: Parse CSV line with proper quote handling
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+// Helper: Create MilkRecord from values
+function createMilkRecord(values: string[]): MilkRecord {
+  return {
+    Sr_no: values[0] || "",
+    Coll_Date: values[1] || "",
+    Ne_date: values[2] || "",
+    Ses_code: values[3] || "",
+    Coll_time: values[4] || "",
+    Mem_code: values[5] || "",
+    Category: values[6] || "",
+    Volume_lt: values[7] || "",
+    Fat_per: values[8] || "",
+    Clr: values[9] || "",
+    Snf: values[10] || "",
+    Protien: values[11] || "",
+    Kg_fat: values[12] || "",
+    Kg_snf: values[13] || "",
+    Rate: values[14] || "",
+    Kg_rate: values[15] || "",
+    Snf_rate: values[16] || "",
+    Ts_comm: values[17] || "",
+    Amount: values[18] || "",
+    Remark: values[19] || "",
+  };
+}
+
+// Helper: Post progress update
+function postProgress(
+  progress: number,
+  message: string,
+  phase: ProgressMessage["phase"]
+) {
+  const msg: ProgressMessage = {
+    type: "progress",
+    progress: Math.min(100, Math.max(0, progress)),
+    message,
+    phase,
+  };
+  postMessage(msg);
+}
+
+// Helper: Sleep to yield to event loop
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
