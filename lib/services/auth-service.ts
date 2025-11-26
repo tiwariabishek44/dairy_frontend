@@ -37,6 +37,11 @@ export const authService = {
   // Login function
   login: async (credentials: LoginRequest): Promise<LoginResponse> => {
     try {
+      console.log('🔐 Login Request:');
+      console.log('  - URL:', API_ENDPOINTS.AUTH.LOGIN);
+      console.log('  - Method: POST');
+      console.log('  - Credentials:', { email: credentials.email, password: '***' });
+
       const response = await api.post<LoginResponse>(
         API_ENDPOINTS.AUTH.LOGIN,
         credentials

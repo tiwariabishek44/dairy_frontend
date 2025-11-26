@@ -43,6 +43,12 @@ export const apiClient = async <T = any>(
       mode: 'cors', // Explicitly set CORS mode
     }
 
+    console.log('🌐 Fetch Request:');
+    console.log('  - URL:', url);
+    console.log('  - Method:', config.method || 'GET');
+    console.log('  - Headers:', headers);
+    console.log('  - Config:', config);
+
     const response = await fetch(url, config)
 
     // Handle non-JSON responses (like file downloads)
@@ -83,6 +89,9 @@ export const api = {
   },
 
   post: <T = any>(url: string, data?: any) => {
+    console.log('📤 API POST Request:');
+    console.log('  - Full URL:', url);
+    console.log('  - Data:', data);
     return apiClient<T>(url, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,

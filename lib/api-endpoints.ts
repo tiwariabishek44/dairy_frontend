@@ -3,6 +3,14 @@ const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "https://app-service-dairy.sphirontech.com/api";
 
+// Debug logging
+console.log("🔧 API Configuration:");
+console.log(
+  "  - NEXT_PUBLIC_API_BASE_URL:",
+  process.env.NEXT_PUBLIC_API_BASE_URL
+);
+console.log("  - BASE_URL:", BASE_URL);
+
 // API Endpoints Configuration
 export const API_ENDPOINTS = {
   // Authentication endpoints
