@@ -1,6 +1,7 @@
 // Base API URL - Your backend server
 const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "https://app-service-dairy.sphirontech.com";
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://app-service-dairy.sphirontech.com/api";
 
 // API Endpoints Configuration
 export const API_ENDPOINTS = {

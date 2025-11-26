@@ -270,21 +270,23 @@ export default function MilkRecordUploadPage() {
             setProcessingProgress(0)
             setProcessingMessage("")
 
-            // Show success message
+            // Clear everything first (file, filter, results)
+            clearMemory(filteredRecords)
+            setFile(null)
+            setFileStats(null)
+            setFilteredRecords([])
+            setHasFiltered(false)
+            setFilterDate("")
+            setError("")
+            setMemoryWarning("")
+            if (fileInputRef.current) {
+              fileInputRef.current.value = ""
+            }
+
+            // Show success message only
             setSuccessMessage(
               `${data.message} | Total: ${data.totalRecords.toLocaleString()} | Processed: ${data.processedRecords.toLocaleString()} | Success: ${data.successRecords.toLocaleString()} | Failed: ${data.failedRecords.toLocaleString()} | Batch ID: ${data.uploadBatchId}`
             )
-
-            // Clear and reset after showing message for 8 seconds
-            setTimeout(() => {
-              clearMemory(filteredRecords)
-              setFile(null)
-              setFileStats(null)
-              resetFilter()
-              if (fileInputRef.current) {
-                fileInputRef.current.value = ""
-              }
-            }, 8000) // Show success message for 8 seconds
           }, 800) // Show 100% for 800ms before closing modal
         } else {
           // Close modal and show error

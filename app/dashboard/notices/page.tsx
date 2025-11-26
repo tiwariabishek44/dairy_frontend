@@ -12,6 +12,7 @@ export default function NoticesPage() {
   const [successMessage, setSuccessMessage] = useState("")
   const [showAddModal, setShowAddModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null)
 
   // Form fields
   const [title, setTitle] = useState("")
@@ -78,6 +79,11 @@ export default function NoticesPage() {
       hour: "2-digit",
       minute: "2-digit",
     })
+  }
+
+  const truncateContent = (content: string, maxLength: number = 150) => {
+    if (content.length <= maxLength) return content
+    return content.substring(0, maxLength) + "..."
   }
 
   return (
@@ -163,7 +169,17 @@ export default function NoticesPage() {
                     {formatDate(notice.postedAt)}
                   </span>
                 </div>
-                <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">{notice.content}</p>
+                <p className="text-slate-700 leading-relaxed whitespace-pre-wrap mb-3">
+                  {truncateContent(notice.content)}
+                </p>
+                {notice.content.length > 150 && (
+                  <button
+                    onClick={() => setSelectedNotice(notice)}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline"
+                  >
+                    See More
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -264,6 +280,46 @@ export default function NoticesPage() {
                     Post Notice
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Full Notice Modal */}
+      {selectedNotice && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex-1 pr-4">
+                <h2 className="text-xl font-semibold text-slate-900 mb-1">{selectedNotice.title}</h2>
+                <span className="text-xs text-slate-500">
+                  {formatDate(selectedNotice.postedAt)}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedNotice(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <p className="text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {selectedNotice.content}
+              </p>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => setSelectedNotice(null)}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium"
+              >
+                Close
               </button>
             </div>
           </div>

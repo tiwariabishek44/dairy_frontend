@@ -41,8 +41,8 @@ export default function AnalyticsPage() {
   const nepaliDisplay = `${NEPALI_MONTHS[todayNepali.getMonth()]} ${nepaliYear}`
 
   // Period based on Nepali date
-  const currentPeriod = nepaliDay > 16 ? "First Half" : "Second Half"
-  const currentPeriodApi = nepaliDay > 16 ? "first" : "second"
+  const currentPeriod = nepaliDay < 16 ? "First Half" : "Second Half"
+  const currentPeriodApi = nepaliDay < 16 ? "first" : "second"
 
   // Fetch overview data
   useEffect(() => {

@@ -39,6 +39,8 @@ export const apiClient = async <T = any>(
     const config: RequestInit = {
       ...options,
       headers,
+      credentials: 'include', // Include credentials for CORS
+      mode: 'cors', // Explicitly set CORS mode
     }
 
     const response = await fetch(url, config)

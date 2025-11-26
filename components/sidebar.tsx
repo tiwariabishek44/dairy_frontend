@@ -6,13 +6,13 @@ import { BarChart3, Milk, Users, Bell, CreditCard, LogOut, X } from "lucide-reac
 import { useState } from "react"
 
 const menuItems = [
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/dashboard/milk-record-upload", label: "Milk Record Upload", icon: Milk },
-  { href: "/dashboard/milk-records", label: "Milk Records", icon: Milk },
+  { href: "/dashboard/analytics", label: "Dashboard", icon: BarChart3 },
+  { href: "/dashboard/milk-record-upload", label: "Upload Milk Data", icon: Milk },
+  { href: "/dashboard/milk-records", label: "Milk Record", icon: Milk },
   { href: "/dashboard/farmers", label: "Farmers Record", icon: Users },
-  { href: "/dashboard/farmer-record-upload", label: "Upload Farmer Record", icon: Users },
-  { href: "/dashboard/notices", label: "Notice", icon: Bell },
-  { href: "/dashboard/payments", label: "Payment Records", icon: CreditCard },
+  { href: "/dashboard/farmer-record-upload", label: "Add Farmers", icon: Users },
+  { href: "/dashboard/notices", label: "Announcements", icon: Bell },
+  // { href: "/dashboard/payments", label: "Payments", icon: CreditCard },
 ]
 
 interface SidebarProps {
