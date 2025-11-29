@@ -29,7 +29,7 @@ export default function MilkRecordUploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [filterDate, setFilterDate] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
-  const [processingPhase, setProcessingPhase] = useState<ParseProgress["phase"]>("reading")
+  const [processingPhase, setProcessingPhase] = useState<ParseProgress["phase"] | "uploading">("reading")
   const [processingProgress, setProcessingProgress] = useState(0)
   const [processingMessage, setProcessingMessage] = useState("")
   const [filteredRecords, setFilteredRecords] = useState<MilkRecord[]>([])
@@ -40,6 +40,7 @@ export default function MilkRecordUploadPage() {
   const [successMessage, setSuccessMessage] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const memoryMonitor = useRef<MemoryMonitor>(new MemoryMonitor())
+  const uploadProgressInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Check memory on mount
   useEffect(() => {
@@ -48,6 +49,15 @@ export default function MilkRecordUploadPage() {
       setMemoryWarning(
         "Low memory detected. Large file processing may be limited."
       )
+    }
+  }, [])
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (uploadProgressInterval.current) {
+        clearInterval(uploadProgressInterval.current)
+      }
     }
   }, [])
 
@@ -221,6 +231,40 @@ export default function MilkRecordUploadPage() {
     })
   }
 
+  // Start simulated progress animation during upload
+  const startUploadProgressAnimation = () => {
+    let currentProgress = 50
+    const maxProgress = 95 // Don't go beyond 95% until actual completion
+
+    uploadProgressInterval.current = setInterval(() => {
+      // Slow down as we approach max
+      const remaining = maxProgress - currentProgress
+      const increment = Math.max(0.5, remaining * 0.05) // Gradually slow down
+
+      currentProgress = Math.min(maxProgress, currentProgress + increment)
+      setProcessingProgress(Math.round(currentProgress))
+
+      // Update message based on progress
+      if (currentProgress < 60) {
+        setProcessingMessage("Sending data to server...")
+      } else if (currentProgress < 75) {
+        setProcessingMessage("Server processing records...")
+      } else if (currentProgress < 85) {
+        setProcessingMessage("Validating records...")
+      } else {
+        setProcessingMessage("Finalizing upload...")
+      }
+    }, 200) // Update every 200ms for smooth animation
+  }
+
+  // Stop progress animation
+  const stopUploadProgressAnimation = () => {
+    if (uploadProgressInterval.current) {
+      clearInterval(uploadProgressInterval.current)
+      uploadProgressInterval.current = null
+    }
+  }
+
   const handleUpload = async () => {
     if (!file) {
       setError("No file selected")
@@ -236,74 +280,88 @@ export default function MilkRecordUploadPage() {
     setError("")
     setSuccessMessage("")
     setIsProcessing(true)
+    setProcessingPhase("uploading")
+    setProcessingProgress(10)
     setProcessingMessage("Preparing upload...")
-    setProcessingPhase("parsing")
-    setProcessingProgress(20)
 
-    // Defer the actual upload to let the UI update first
-    setTimeout(async () => {
-      try {
-        console.log(`[UPLOAD] Uploading ${filteredRecords.length} filtered records for date: ${filterDate}`)
+    try {
+      console.log(`[UPLOAD] Uploading ${filteredRecords.length} filtered records for date: ${filterDate}`)
 
-        // Convert filtered records to XLSX file
-        setProcessingMessage("Converting filtered records to Excel...")
-        setProcessingProgress(40)
-        const xlsxFile = convertRecordsToXLSXFile(filteredRecords, filterDate)
-        console.log(`[UPLOAD] Created XLSX file: ${xlsxFile.name} (${xlsxFile.size} bytes)`)
+      // Convert filtered records to XLSX file
+      setProcessingMessage("Converting records to Excel...")
+      setProcessingProgress(25)
 
-        setProcessingMessage("Uploading Excel file to server...")
-        setProcessingProgress(50)
+      // Small delay to show conversion progress
+      await new Promise(resolve => setTimeout(resolve, 300))
 
-        // Upload the XLSX file as multipart/form-data (same as original upload)
-        const response = await milkRecordService.uploadMilkRecords(xlsxFile)
+      const xlsxFile = convertRecordsToXLSXFile(filteredRecords, filterDate)
+      console.log(`[UPLOAD] Created XLSX file: ${xlsxFile.name} (${xlsxFile.size} bytes)`)
 
-        console.log("[UPLOAD] Response:", response)
+      setProcessingProgress(40)
+      setProcessingMessage("Excel file ready, starting upload...")
+
+      // Small delay before starting upload animation
+      await new Promise(resolve => setTimeout(resolve, 200))
+
+      // Start the progress animation
+      setProcessingProgress(50)
+      startUploadProgressAnimation()
+
+      // Upload the XLSX file as multipart/form-data
+      const response = await milkRecordService.uploadMilkRecords(xlsxFile)
+
+      // Stop the animation
+      stopUploadProgressAnimation()
+
+      console.log("[UPLOAD] Response:", response)
+
+      if (response.success) {
+        const { data } = response
+
+        // Show completion progress
         setProcessingProgress(100)
-        setProcessingMessage("Complete!")
+        setProcessingMessage("Upload complete!")
 
-        if (response.success) {
-          const { data } = response
+        // Wait a bit to show 100% progress, then close modal and show success
+        await new Promise(resolve => setTimeout(resolve, 800))
 
-          // Wait a bit to show 100% progress, then close modal and show success
-          setTimeout(() => {
-            setIsProcessing(false)
-            setProcessingProgress(0)
-            setProcessingMessage("")
+        setIsProcessing(false)
+        setProcessingProgress(0)
+        setProcessingMessage("")
 
-            // Clear everything first (file, filter, results)
-            clearMemory(filteredRecords)
-            setFile(null)
-            setFileStats(null)
-            setFilteredRecords([])
-            setHasFiltered(false)
-            setFilterDate("")
-            setError("")
-            setMemoryWarning("")
-            if (fileInputRef.current) {
-              fileInputRef.current.value = ""
-            }
-
-            // Show success message only
-            setSuccessMessage(
-              `${data.message} | Total: ${data.totalRecords.toLocaleString()} | Processed: ${data.processedRecords.toLocaleString()} | Success: ${data.successRecords.toLocaleString()} | Failed: ${data.failedRecords.toLocaleString()} | Batch ID: ${data.uploadBatchId}`
-            )
-          }, 800) // Show 100% for 800ms before closing modal
-        } else {
-          // Close modal and show error
-          setIsProcessing(false)
-          setProcessingProgress(0)
-          setProcessingMessage("")
-          setError(response.message || "Upload failed")
+        // Clear everything (file, filter, results)
+        clearMemory(filteredRecords)
+        setFile(null)
+        setFileStats(null)
+        setFilteredRecords([])
+        setHasFiltered(false)
+        setFilterDate("")
+        setError("")
+        setMemoryWarning("")
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ""
         }
-      } catch (err: any) {
-        console.error("[UPLOAD ERROR]", err)
+
+        // Show success message
+        setSuccessMessage(
+          `${data.message} | Total: ${data.totalRecords.toLocaleString()} | Processed: ${data.processedRecords.toLocaleString()} | Success: ${data.successRecords.toLocaleString()} | Failed: ${data.failedRecords.toLocaleString()} | Batch ID: ${data.uploadBatchId}`
+        )
+      } else {
         // Close modal and show error
         setIsProcessing(false)
         setProcessingProgress(0)
         setProcessingMessage("")
-        setError(err.message || "Upload failed. Please try again.")
+        setError(response.message || "Upload failed")
       }
-    }, 100) // 100ms delay to ensure UI updates
+    } catch (err: any) {
+      console.error("[UPLOAD ERROR]", err)
+      // Stop animation and close modal
+      stopUploadProgressAnimation()
+      setIsProcessing(false)
+      setProcessingProgress(0)
+      setProcessingMessage("")
+      setError(err.message || "Upload failed. Please try again.")
+    }
   }
 
   const handleRemoveFile = () => {
@@ -516,55 +574,44 @@ export default function MilkRecordUploadPage() {
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4 w-full">
             <div className="flex flex-col items-center space-y-4">
-              {/* Animated Progress Circle */}
-              <div className="relative w-24 h-24">
-                <svg className="w-24 h-24 transform -rotate-90">
-                  <circle
-                    cx="48"
-                    cy="48"
-                    r="44"
-                    stroke="#e5e7eb"
-                    strokeWidth="8"
-                    fill="none"
-                  />
-                  <circle
-                    cx="48"
-                    cy="48"
-                    r="44"
-                    stroke="#2563eb"
-                    strokeWidth="8"
-                    fill="none"
-                    strokeDasharray={276.46}
-                    strokeDashoffset={276.46 * (1 - processingProgress / 100)}
-                    strokeLinecap="round"
-                    className="transition-all duration-300"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-bold text-blue-600">
-                    {processingProgress}%
-                  </span>
-                </div>
+              {/* Continuous Spinning Loader */}
+              <div className="relative w-20 h-20">
+                {/* Background circle */}
+                <div className="absolute inset-0 rounded-full border-4 border-gray-200" />
+
+                {/* Spinning circle - continuously rotates */}
+                <div
+                  className={`absolute inset-0 rounded-full border-4 border-transparent animate-spin ${processingPhase === "uploading"
+                    ? "border-t-green-600 border-r-green-600"
+                    : "border-t-blue-600 border-r-blue-600"
+                    }`}
+                  style={{ animationDuration: '0.8s' }}
+                />
               </div>
 
               {/* Status */}
               <div className="text-center w-full">
-                <p className="font-semibold text-slate-900 mb-1">
+                <p className={`font-semibold mb-1 ${processingPhase === "uploading" ? "text-green-700" : "text-slate-900"}`}>
                   {processingPhase === "reading" && "Reading file..."}
                   {processingPhase === "parsing" && "Processing data..."}
                   {processingPhase === "filtering" && "Filtering records..."}
+                  {processingPhase === "uploading" && "Uploading to server..."}
                   {processingPhase === "complete" && "Complete!"}
                 </p>
                 <p className="text-sm text-slate-600">{processingMessage}</p>
               </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-200 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${processingProgress}%` }}
-                />
-              </div>
+              {/* Uploading indicator with animated dots */}
+              {processingPhase === "uploading" && (
+                <p className="text-xs text-slate-500">
+                  Please wait while records are being uploaded
+                  <span className="inline-flex ml-1">
+                    <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '300ms' }}>.</span>
+                  </span>
+                </p>
+              )}
             </div>
           </div>
         </div>
