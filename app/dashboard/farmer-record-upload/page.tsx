@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { AlertCircle, CheckCircle, Upload, X, Users, List, FileUp, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { AlertCircle, CheckCircle, Upload, X, Users, List, FileUp, RefreshCw, ChevronLeft, ChevronRight, Clock } from "lucide-react"
 import { farmerService, type UploadedFarmer } from "@/lib/services/farmer-service"
 
 type TabType = "upload" | "list"
@@ -19,8 +19,51 @@ export default function FarmerRecordUploadPage() {
   const [farmers, setFarmers] = useState<UploadedFarmer[]>([])
   const [isLoadingFarmers, setIsLoadingFarmers] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [elapsedTime, setElapsedTime] = useState(0)
   const itemsPerPage = 50
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const timerInterval = useRef<NodeJS.Timeout | null>(null)
+  const startTimeRef = useRef<number>(0)
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+      }
+    }
+  }, [])
+
+  // Start timer when processing begins
+  useEffect(() => {
+    if (isProcessing) {
+      startTimeRef.current = Date.now()
+      setElapsedTime(0)
+
+      timerInterval.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000)
+        setElapsedTime(elapsed)
+      }, 1000)
+    } else {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+        timerInterval.current = null
+      }
+    }
+
+    return () => {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+      }
+    }
+  }, [isProcessing])
+
+  // Format elapsed time as MM:SS
+  const formatElapsedTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -268,11 +311,10 @@ export default function FarmerRecordUploadPage() {
                   setError("")
                   setSuccessMessage("")
                 }}
-                className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
-                  activeTab === "upload"
-                    ? "border-green-600 text-green-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
+                className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === "upload"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
               >
                 <FileUp className="w-4 h-4" />
                 Upload
@@ -283,11 +325,10 @@ export default function FarmerRecordUploadPage() {
                   setError("")
                   setSuccessMessage("")
                 }}
-                className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
-                  activeTab === "list"
-                    ? "border-green-600 text-green-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
+                className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === "list"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
               >
                 <List className="w-4 h-4" />
                 Farmer List
@@ -320,70 +361,70 @@ export default function FarmerRecordUploadPage() {
           <>
             {/* Upload Zone */}
             <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
-                ? "border-green-400 bg-green-50"
-                : "border-slate-200 hover:border-green-300"
-              }`}
-          >
-            <div className="w-12 h-12 mx-auto mb-4 bg-slate-100 rounded-lg flex items-center justify-center">
-              <Upload className="w-6 h-6 text-slate-600" />
-            </div>
-            <p className="text-base font-medium text-slate-900 mb-1">
-              Drop your file here
-            </p>
-            <p className="text-sm text-slate-600 mb-4">
-              or click to browse
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessing}
-              className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Select File
-            </button>
-            <p className="text-xs text-slate-500 mt-3">
-              CSV, XLSX, XLS • Max 100MB
-            </p>
-          </div>
-
-          {/* Selected File Info */}
-          {file && (
-            <div className="mt-4 flex items-center justify-between p-3 border rounded-md bg-green-50 border-green-200">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-green-600 rounded-md flex items-center justify-center">
-                  <CheckCircle className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <div className="font-medium text-slate-900 text-sm">
-                    {file.name}
-                  </div>
-                  <div className="text-xs text-slate-600">
-                    {formatFileSize(file.size)}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={handleRemoveFile}
-                disabled={isProcessing}
-                className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
+                  ? "border-green-400 bg-green-50"
+                  : "border-slate-200 hover:border-green-300"
+                  }`}
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+                <div className="w-12 h-12 mx-auto mb-4 bg-slate-100 rounded-lg flex items-center justify-center">
+                  <Upload className="w-6 h-6 text-slate-600" />
+                </div>
+                <p className="text-base font-medium text-slate-900 mb-1">
+                  Drop your file here
+                </p>
+                <p className="text-sm text-slate-600 mb-4">
+                  or click to browse
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isProcessing}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Select File
+                </button>
+                <p className="text-xs text-slate-500 mt-3">
+                  CSV, XLSX, XLS • Max 100MB
+                </p>
+              </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-        </div>
+              {/* Selected File Info */}
+              {file && (
+                <div className="mt-4 flex items-center justify-between p-3 border rounded-md bg-green-50 border-green-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-600 rounded-md flex items-center justify-center">
+                      <CheckCircle className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-slate-900 text-sm">
+                        {file.name}
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        {formatFileSize(file.size)}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRemoveFile}
+                    disabled={isProcessing}
+                    className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </div>
 
             {/* Upload Button */}
             {file && !isProcessing && (
@@ -506,11 +547,10 @@ export default function FarmerRecordUploadPage() {
                       <button
                         key={page}
                         onClick={() => goToPage(page as number)}
-                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
-                          currentPage === page
-                            ? "bg-green-600 text-white"
-                            : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
-                        }`}
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${currentPage === page
+                          ? "bg-green-600 text-white"
+                          : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+                          }`}
                       >
                         {page}
                       </button>
@@ -535,54 +575,41 @@ export default function FarmerRecordUploadPage() {
 
       {/* Processing Modal */}
       {isProcessing && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4 w-full">
-            <div className="flex flex-col items-center space-y-4">
-              {/* Animated Progress Circle */}
-              <div className="relative w-24 h-24">
-                <svg className="w-24 h-24 transform -rotate-90">
-                  <circle
-                    cx="48"
-                    cy="48"
-                    r="44"
-                    stroke="#e5e7eb"
-                    strokeWidth="8"
-                    fill="none"
-                  />
-                  <circle
-                    cx="48"
-                    cy="48"
-                    r="44"
-                    stroke="#16a34a"
-                    strokeWidth="8"
-                    fill="none"
-                    strokeDasharray={276.46}
-                    strokeDashoffset={276.46 * (1 - processingProgress / 100)}
-                    strokeLinecap="round"
-                    className="transition-all duration-300"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-bold text-green-600">
-                    {processingProgress}%
-                  </span>
-                </div>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
+            <div className="flex flex-col items-center space-y-6">
+              {/* Spinner */}
+              <div className="relative w-20 h-20">
+                <div className="absolute inset-0 rounded-full border-4 border-gray-200" />
+                <div
+                  className="absolute inset-0 rounded-full border-4 border-transparent border-t-green-600 border-r-green-600 animate-spin"
+                  style={{ animationDuration: '0.8s' }}
+                />
               </div>
 
               {/* Status */}
               <div className="text-center w-full">
-                <p className="font-semibold text-slate-900 mb-1">
-                  Uploading...
+                <p className="text-lg font-bold text-green-700 mb-2">
+                  Uploading Farmer Records...
                 </p>
-                <p className="text-sm text-slate-600">{processingMessage}</p>
-              </div>
+                <p className="text-sm text-gray-600 mb-3">{processingMessage}</p>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-slate-200 rounded-full h-2">
-                <div
-                  className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${processingProgress}%` }}
-                />
+                {/* Timer Display */}
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span className="font-mono font-semibold text-gray-700">
+                    {formatElapsedTime(elapsedTime)}
+                  </span>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-3">
+                  Please wait, this may take a moment
+                  <span className="inline-flex ml-1">
+                    <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
+                    <span className="animate-bounce" style={{ animationDelay: '300ms' }}>.</span>
+                  </span>
+                </p>
               </div>
             </div>
           </div>

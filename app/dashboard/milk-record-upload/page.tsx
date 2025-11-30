@@ -21,7 +21,7 @@ import {
 } from "@/lib/memory-manager"
 import { milkRecordService } from "@/lib/services/milk-record-service"
 import NepaliDate from "nepali-date-converter"
-import { AlertCircle, CheckCircle, Upload, X, FileSpreadsheet } from "lucide-react"
+import { AlertCircle, CheckCircle, Upload, X, FileSpreadsheet, Calendar, Filter, Database, Clock } from "lucide-react"
 import * as XLSX from "xlsx"
 
 export default function MilkRecordUploadPage() {
@@ -38,9 +38,12 @@ export default function MilkRecordUploadPage() {
   const [error, setError] = useState("")
   const [memoryWarning, setMemoryWarning] = useState("")
   const [successMessage, setSuccessMessage] = useState("")
+  const [elapsedTime, setElapsedTime] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const memoryMonitor = useRef<MemoryMonitor>(new MemoryMonitor())
   const uploadProgressInterval = useRef<NodeJS.Timeout | null>(null)
+  const timerInterval = useRef<NodeJS.Timeout | null>(null)
+  const startTimeRef = useRef<number>(0)
 
   // Check memory on mount
   useEffect(() => {
@@ -52,14 +55,48 @@ export default function MilkRecordUploadPage() {
     }
   }, [])
 
-  // Cleanup interval on unmount
+  // Cleanup intervals on unmount
   useEffect(() => {
     return () => {
       if (uploadProgressInterval.current) {
         clearInterval(uploadProgressInterval.current)
       }
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+      }
     }
   }, [])
+
+  // Start timer when processing begins
+  useEffect(() => {
+    if (isProcessing) {
+      startTimeRef.current = Date.now()
+      setElapsedTime(0)
+
+      timerInterval.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000)
+        setElapsedTime(elapsed)
+      }, 1000)
+    } else {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+        timerInterval.current = null
+      }
+    }
+
+    return () => {
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current)
+      }
+    }
+  }, [isProcessing])
+
+  // Format elapsed time as MM:SS
+  const formatElapsedTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -205,27 +242,14 @@ export default function MilkRecordUploadPage() {
 
   // Convert filtered records array to XLSX file
   const convertRecordsToXLSXFile = (records: MilkRecord[], date: string): File => {
-    // Create a new workbook
     const workbook = XLSX.utils.book_new()
-
-    // Convert records array to worksheet
     const worksheet = XLSX.utils.json_to_sheet(records)
-
-    // Add worksheet to workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, "Milk Records")
-
-    // Generate XLSX file as array buffer
     const xlsxBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
-
-    // Create blob from buffer
     const blob = new Blob([xlsxBuffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     })
-
-    // Create filename with date
     const filename = `filtered_records_${date.replace(/\//g, "-")}.xlsx`
-
-    // Return File object
     return new File([blob], filename, {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     })
@@ -234,17 +258,14 @@ export default function MilkRecordUploadPage() {
   // Start simulated progress animation during upload
   const startUploadProgressAnimation = () => {
     let currentProgress = 50
-    const maxProgress = 95 // Don't go beyond 95% until actual completion
+    const maxProgress = 95
 
     uploadProgressInterval.current = setInterval(() => {
-      // Slow down as we approach max
       const remaining = maxProgress - currentProgress
-      const increment = Math.max(0.5, remaining * 0.05) // Gradually slow down
-
+      const increment = Math.max(0.5, remaining * 0.05)
       currentProgress = Math.min(maxProgress, currentProgress + increment)
       setProcessingProgress(Math.round(currentProgress))
 
-      // Update message based on progress
       if (currentProgress < 60) {
         setProcessingMessage("Sending data to server...")
       } else if (currentProgress < 75) {
@@ -254,10 +275,9 @@ export default function MilkRecordUploadPage() {
       } else {
         setProcessingMessage("Finalizing upload...")
       }
-    }, 200) // Update every 200ms for smooth animation
+    }, 200)
   }
 
-  // Stop progress animation
   const stopUploadProgressAnimation = () => {
     if (uploadProgressInterval.current) {
       clearInterval(uploadProgressInterval.current)
@@ -272,11 +292,10 @@ export default function MilkRecordUploadPage() {
     }
 
     if (filteredRecords.length === 0) {
-      setError("No filtered records to upload. Please select a date with records.")
+      setError("No records found for the selected date. Please choose a different date.")
       return
     }
 
-    // Clear any previous messages
     setError("")
     setSuccessMessage("")
     setIsProcessing(true)
@@ -287,11 +306,8 @@ export default function MilkRecordUploadPage() {
     try {
       console.log(`[UPLOAD] Uploading ${filteredRecords.length} filtered records for date: ${filterDate}`)
 
-      // Convert filtered records to XLSX file
       setProcessingMessage("Converting records to Excel...")
       setProcessingProgress(25)
-
-      // Small delay to show conversion progress
       await new Promise(resolve => setTimeout(resolve, 300))
 
       const xlsxFile = convertRecordsToXLSXFile(filteredRecords, filterDate)
@@ -299,18 +315,12 @@ export default function MilkRecordUploadPage() {
 
       setProcessingProgress(40)
       setProcessingMessage("Excel file ready, starting upload...")
-
-      // Small delay before starting upload animation
       await new Promise(resolve => setTimeout(resolve, 200))
 
-      // Start the progress animation
       setProcessingProgress(50)
       startUploadProgressAnimation()
 
-      // Upload the XLSX file as multipart/form-data
       const response = await milkRecordService.uploadMilkRecords(xlsxFile)
-
-      // Stop the animation
       stopUploadProgressAnimation()
 
       console.log("[UPLOAD] Response:", response)
@@ -318,18 +328,14 @@ export default function MilkRecordUploadPage() {
       if (response.success) {
         const { data } = response
 
-        // Show completion progress
         setProcessingProgress(100)
         setProcessingMessage("Upload complete!")
-
-        // Wait a bit to show 100% progress, then close modal and show success
         await new Promise(resolve => setTimeout(resolve, 800))
 
         setIsProcessing(false)
         setProcessingProgress(0)
         setProcessingMessage("")
 
-        // Clear everything (file, filter, results)
         clearMemory(filteredRecords)
         setFile(null)
         setFileStats(null)
@@ -342,12 +348,10 @@ export default function MilkRecordUploadPage() {
           fileInputRef.current.value = ""
         }
 
-        // Show success message
         setSuccessMessage(
-          `${data.message} | Total: ${data.totalRecords.toLocaleString()} | Processed: ${data.processedRecords.toLocaleString()} | Success: ${data.successRecords.toLocaleString()} | Failed: ${data.failedRecords.toLocaleString()} | Batch ID: ${data.uploadBatchId}`
+          `Successfully uploaded ${data.successRecords.toLocaleString()} records for ${filterDate}. ${data.failedRecords > 0 ? `${data.failedRecords} records failed.` : ''}`
         )
       } else {
-        // Close modal and show error
         setIsProcessing(false)
         setProcessingProgress(0)
         setProcessingMessage("")
@@ -355,7 +359,6 @@ export default function MilkRecordUploadPage() {
       }
     } catch (err: any) {
       console.error("[UPLOAD ERROR]", err)
-      // Stop animation and close modal
       stopUploadProgressAnimation()
       setIsProcessing(false)
       setProcessingProgress(0)
@@ -375,126 +378,150 @@ export default function MilkRecordUploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-6 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between gap-6 mb-4">
-            <div className="flex items-start gap-4 flex-1">
-              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
-                <FileSpreadsheet className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold text-slate-900 mb-1">
-                  Milk Record Upload (Filtered by Date)
-                </h1>
-                <p className="text-sm text-slate-600">
-                  Upload records for specific date • Filter before uploading
-                </p>
-              </div>
-            </div>
-
-            {/* Date Picker */}
-            {file && !isProcessing && (
-              <div className="w-72">
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Filter by Date
-                </label>
-                <NepaliDatePicker
-                  value={filterDate}
-                  onChange={setFilterDate}
-                  onApply={handleFilter}
-                  placeholder="Select date"
-                />
-              </div>
-            )}
-          </div>
+    <div className="space-y-6">
+      {/* Header with Filter */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Upload Milk Records</h1>
+          <p className="text-gray-600 mt-1">Upload Excel file with milk collection data</p>
         </div>
 
-        {/* Memory Warning */}
-        {memoryWarning && (
-          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-            <p className="text-sm text-amber-800">{memoryWarning}</p>
-          </div>
-        )}
-
-        {/* Success Message */}
-        {successMessage && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-green-900 mb-1">Upload Successful!</p>
-              <p className="text-sm text-green-700">{successMessage}</p>
+        {/* Filter Section - Top Right */}
+        {file && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-gray-500" />
+                <label className="text-sm font-medium text-gray-700">
+                  Filter Date:
+                </label>
+              </div>
+              <NepaliDatePicker
+                value={filterDate}
+                onChange={setFilterDate}
+                onApply={handleFilter}
+                placeholder="Select date"
+              />
+              <button
+                onClick={handleFilter}
+                disabled={isProcessing || !filterDate}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
+              >
+                <Filter className="w-4 h-4" />
+                Apply
+              </button>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+      {/* Success Message */}
+      {successMessage && (
+        <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded-lg">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-green-900">Success!</p>
+              <p className="text-sm text-green-800 mt-1">{successMessage}</p>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Upload Zone */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+      {/* Error Message */}
+      {error && (
+        <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-red-900">Error</p>
+              <p className="text-sm text-red-700 mt-1">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Memory Warning */}
+      {memoryWarning && (
+        <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-amber-800">{memoryWarning}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Upload Card */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-8">
+          {/* File Upload Area */}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
-              ? "border-blue-400 bg-blue-50"
-              : "border-slate-200 hover:border-blue-300"
+            className={`border-2 border-dashed rounded-lg p-12 text-center transition-all ${isDragging
+              ? "border-blue-500 bg-blue-50 scale-[1.01]"
+              : file
+                ? "border-green-300 bg-green-50/50"
+                : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
               }`}
           >
-            <div className="w-12 h-12 mx-auto mb-4 bg-slate-100 rounded-lg flex items-center justify-center">
-              <Upload className="w-6 h-6 text-slate-600" />
+            <div className={`w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center ${file ? "bg-green-100" : "bg-gray-100"
+              }`}>
+              {file ? (
+                <CheckCircle className="w-10 h-10 text-green-600" />
+              ) : (
+                <Upload className="w-10 h-10 text-gray-400" />
+              )}
             </div>
-            <p className="text-base font-medium text-slate-900 mb-1">
-              Drop your file here
-            </p>
-            <p className="text-sm text-slate-600 mb-4">
-              or click to browse
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Select File
-            </button>
-            <p className="text-xs text-slate-500 mt-3">
-              CSV, XLSX, XLS • Max 100MB • Only filtered date records are uploaded
-            </p>
-          </div>
 
-          {/* Selected File Info */}
-          {file && (
-            <div className="mt-4 flex items-center justify-between p-3 border rounded-md bg-green-50 border-green-200">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-green-600 rounded-md flex items-center justify-center">
-                  <CheckCircle className="w-4 h-4 text-white" />
+            {file ? (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  File Selected Successfully
+                </h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  {file.name} ({formatFileSize(file.size)})
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isProcessing}
+                    className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Choose Different File
+                  </button>
+                  <button
+                    onClick={handleRemoveFile}
+                    disabled={isProcessing}
+                    className="px-5 py-2.5 bg-red-50 border border-red-200 text-red-700 rounded-lg font-medium hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Remove File
+                  </button>
                 </div>
-                <div>
-                  <div className="font-medium text-slate-900 text-sm">
-                    {file.name}
-                  </div>
-                  <div className="text-xs text-slate-600">
-                    {formatFileSize(file.size)}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={handleRemoveFile}
-                disabled={isProcessing}
-                className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Drop your Excel file here
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  or click to browse from your computer
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-all shadow-md hover:shadow-lg inline-flex items-center gap-2"
+                >
+                  <FileSpreadsheet className="w-5 h-5" />
+                  Select Excel File
+                </button>
+                <p className="text-xs text-gray-500 mt-4">
+                  Supported: CSV, XLSX, XLS • Max size: 100MB
+                </p>
+              </>
+            )}
+          </div>
 
           <input
             ref={fileInputRef}
@@ -505,81 +532,90 @@ export default function MilkRecordUploadPage() {
           />
         </div>
 
-        {/* Results */}
+        {/* Results Section */}
         {hasFiltered && !isProcessing && fileStats && (
-          <div className="mb-6">
+          <div className="border-t border-gray-200 p-8 bg-gray-50">
             {fileStats.filteredRecords > 0 ? (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm text-green-600 font-medium">
-                      ✓ Records Found
-                    </div>
-                    <div className="text-2xl font-bold text-green-800">
-                      {fileStats.filteredRecords.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-green-600">
-                      Date: {filterDate}
-                    </div>
-                    {fileStats.totalRecords > 0 && (
-                      <div className="text-xs text-green-600 mt-1">
-                        {(
-                          (fileStats.filteredRecords / fileStats.totalRecords) *
-                          100
-                        ).toFixed(2)}
-                        % of {fileStats.totalRecords.toLocaleString()} total
+              <div className="space-y-6">
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white rounded-lg p-6 border border-gray-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Database className="w-5 h-5 text-blue-600" />
                       </div>
-                    )}
-                    <div className="text-xs text-green-600 mt-1">
-                      Processed in {fileStats.processingTime}ms
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 uppercase">Total Records</p>
+                        <p className="text-2xl font-bold text-gray-900">{fileStats.totalRecords.toLocaleString()}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-6 h-6 text-white" />
+
+                  <div className="bg-white rounded-lg p-6 border border-gray-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 uppercase">Filtered Records</p>
+                        <p className="text-2xl font-bold text-green-600">{fileStats.filteredRecords.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-6 border border-gray-200">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <Calendar className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 uppercase">Selected Date</p>
+                        <p className="text-2xl font-bold text-gray-900">{filterDate}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                {/* Upload Button */}
+                <button
+                  onClick={handleUpload}
+                  disabled={isProcessing}
+                  className="w-full px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg font-semibold hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg"
+                >
+                  <Upload className="w-6 h-6" />
+                  Upload {fileStats.filteredRecords.toLocaleString()} Records to Server
+                </button>
               </div>
             ) : (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-6">
+                <div className="flex items-start gap-4">
+                  <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-medium text-amber-900 text-sm">
+                    <h3 className="font-semibold text-amber-900 mb-1">
                       No Records Found
-                    </div>
-                    <div className="text-sm text-amber-800">
-                      No records for date: <strong>{filterDate}</strong>
-                    </div>
+                    </h3>
+                    <p className="text-sm text-amber-800 mb-2">
+                      No records found for date: <strong>{filterDate}</strong>
+                    </p>
+                    <p className="text-sm text-amber-700">
+                      Please select a different date from the filter above.
+                    </p>
                   </div>
                 </div>
               </div>
             )}
           </div>
         )}
-
-        {/* Upload Button */}
-        {hasFiltered && !isProcessing && fileStats && fileStats.filteredRecords > 0 && (
-          <button
-            onClick={handleUpload}
-            className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-          >
-            <Upload className="w-5 h-5" />
-            Upload {fileStats.filteredRecords.toLocaleString()} Records for {filterDate}
-          </button>
-        )}
       </div>
 
       {/* Processing Modal */}
       {isProcessing && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4 w-full">
-            <div className="flex flex-col items-center space-y-4">
-              {/* Continuous Spinning Loader */}
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
+            <div className="flex flex-col items-center space-y-6">
+              {/* Spinner */}
               <div className="relative w-20 h-20">
-                {/* Background circle */}
                 <div className="absolute inset-0 rounded-full border-4 border-gray-200" />
-
-                {/* Spinning circle - continuously rotates */}
                 <div
                   className={`absolute inset-0 rounded-full border-4 border-transparent animate-spin ${processingPhase === "uploading"
                     ? "border-t-green-600 border-r-green-600"
@@ -591,27 +627,35 @@ export default function MilkRecordUploadPage() {
 
               {/* Status */}
               <div className="text-center w-full">
-                <p className={`font-semibold mb-1 ${processingPhase === "uploading" ? "text-green-700" : "text-slate-900"}`}>
-                  {processingPhase === "reading" && "Reading file..."}
-                  {processingPhase === "parsing" && "Processing data..."}
-                  {processingPhase === "filtering" && "Filtering records..."}
-                  {processingPhase === "uploading" && "Uploading to server..."}
+                <p className={`text-lg font-bold mb-2 ${processingPhase === "uploading" ? "text-green-700" : "text-gray-900"
+                  }`}>
+                  {processingPhase === "reading" && "Loading File..."}
+                  {processingPhase === "parsing" && "Reading Data..."}
+                  {processingPhase === "filtering" && "Finding Records..."}
+                  {processingPhase === "uploading" && "Uploading to Server..."}
                   {processingPhase === "complete" && "Complete!"}
                 </p>
-                <p className="text-sm text-slate-600">{processingMessage}</p>
-              </div>
+                <p className="text-sm text-gray-600 mb-3">{processingMessage}</p>
 
-              {/* Uploading indicator with animated dots */}
-              {processingPhase === "uploading" && (
-                <p className="text-xs text-slate-500">
-                  Please wait while records are being uploaded
-                  <span className="inline-flex ml-1">
-                    <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
-                    <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
-                    <span className="animate-bounce" style={{ animationDelay: '300ms' }}>.</span>
+                {/* Timer Display */}
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span className="font-mono font-semibold text-gray-700">
+                    {formatElapsedTime(elapsedTime)}
                   </span>
-                </p>
-              )}
+                </div>
+
+                {processingPhase === "uploading" && (
+                  <p className="text-xs text-gray-500 mt-3">
+                    Please wait, this may take a moment
+                    <span className="inline-flex ml-1">
+                      <span className="animate-bounce" style={{ animationDelay: '0ms' }}>.</span>
+                      <span className="animate-bounce" style={{ animationDelay: '150ms' }}>.</span>
+                      <span className="animate-bounce" style={{ animationDelay: '300ms' }}>.</span>
+                    </span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

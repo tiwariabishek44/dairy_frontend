@@ -17,7 +17,7 @@ const NEPALI_MONTHS = [
 
 export default function MilkRecordsPage() {
   const [currentPage, setCurrentPage] = useState(1)
-  const [filterType, setFilterType] = useState("dateRange")
+  const [filterType, setFilterType] = useState("monthPeriod")
   const [nepaliDate, setNepaliDate] = useState("")
   const [nepaliMonth, setNepaliMonth] = useState("")
   const [nepaliYear, setNepaliYear] = useState("")
@@ -223,9 +223,9 @@ export default function MilkRecordsPage() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Filter Type</label>
-          <div className="flex gap-4">
+        {/* <div className="mb-6"> */}
+        {/* <label className="block text-sm font-medium text-gray-700 mb-3">Filter Type</label> */}
+        {/* <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="radio"
@@ -244,8 +244,8 @@ export default function MilkRecordsPage() {
               />
               <span className="text-sm text-gray-700">Month & Period (Summary View)</span>
             </label>
-          </div>
-        </div>
+          </div> */}
+        {/* </div> */}
 
         {filterType === "dateRange" && (
           <div className="flex gap-6 items-end">
