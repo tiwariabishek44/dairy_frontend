@@ -32,6 +32,7 @@ interface ParseMessage {
   fileName: string;
   filterDate?: string;
   chunkSize?: number;
+  normalizeMemberCode?: boolean; // Add this flag
 }
 
 interface ProgressMessage {
@@ -60,9 +61,30 @@ interface ErrorMessage {
 
 type WorkerMessage = ProgressMessage | ResultMessage | ErrorMessage;
 
+/**
+ * Normalize member code by removing leading zeros
+ * Examples: "0003" -> "3", "0125" -> "125", "3" -> "3"
+ */
+function normalizeMemberCode(memCode: string): string {
+  if (!memCode) return memCode;
+
+  // Convert to string and remove leading zeros
+  const normalized = String(memCode).replace(/^0+/, "");
+
+  // If all zeros, return "0"
+  return normalized || "0";
+}
+
 // Listen for messages from main thread
 self.onmessage = async (e: MessageEvent<ParseMessage>) => {
-  const { type, fileData, fileName, filterDate, chunkSize = 1000 } = e.data;
+  const {
+    type,
+    fileData,
+    fileName,
+    filterDate,
+    chunkSize = 1000,
+    normalizeMemberCode: shouldNormalize = true,
+  } = e.data;
 
   if (type === "parse") {
     try {
@@ -81,7 +103,8 @@ self.onmessage = async (e: MessageEvent<ParseMessage>) => {
         const result = await parseCSVInChunks(
           fileData,
           filterDate,
-          chunkSize
+          chunkSize,
+          shouldNormalize
         );
         allRecords = result.allRecords;
         filteredRecords = result.filteredRecords;
@@ -90,7 +113,8 @@ self.onmessage = async (e: MessageEvent<ParseMessage>) => {
         const result = await parseExcelInChunks(
           fileData,
           filterDate,
-          chunkSize
+          chunkSize,
+          shouldNormalize
         );
         allRecords = result.allRecords;
         filteredRecords = result.filteredRecords;
@@ -144,7 +168,8 @@ self.onmessage = async (e: MessageEvent<ParseMessage>) => {
 async function parseCSVInChunks(
   fileData: ArrayBuffer,
   filterDate: string | undefined,
-  chunkSize: number
+  chunkSize: number,
+  shouldNormalize: boolean = true
 ) {
   postProgress(10, "Reading CSV file...", "reading");
 
@@ -171,15 +196,12 @@ async function parseCSVInChunks(
     if (neDate) dates.add(neDate);
 
     if (values.length >= 19) {
-      const record = createMilkRecord(values);
+      const record = createMilkRecord(values, shouldNormalize);
 
       // Filter during parsing (single pass!)
       if (!filterDate || neDate === filterDate) {
         filteredRecords.push(record);
       }
-
-      // Only keep in allRecords for stats (we don't return this)
-      // To save memory, we just count
     }
 
     // Report progress every chunk
@@ -209,7 +231,8 @@ async function parseCSVInChunks(
 async function parseExcelInChunks(
   fileData: ArrayBuffer,
   filterDate: string | undefined,
-  chunkSize: number
+  chunkSize: number,
+  shouldNormalize: boolean = true
 ) {
   postProgress(10, "Reading Excel file...", "reading");
 
@@ -254,7 +277,7 @@ async function parseExcelInChunks(
     if (values.length >= 19) {
       // Filter during parsing (single pass!)
       if (!filterDate || neDate === filterDate) {
-        filteredRecords.push(createMilkRecord(values));
+        filteredRecords.push(createMilkRecord(values, shouldNormalize));
       }
     }
 
@@ -305,14 +328,19 @@ function parseCSVLine(line: string): string[] {
 }
 
 // Helper: Create MilkRecord from values
-function createMilkRecord(values: string[]): MilkRecord {
+function createMilkRecord(
+  values: string[],
+  shouldNormalize: boolean = true
+): MilkRecord {
   return {
     Sr_no: values[0] || "",
     Coll_Date: values[1] || "",
     Ne_date: values[2] || "",
     Ses_code: values[3] || "",
     Coll_time: values[4] || "",
-    Mem_code: values[5] || "",
+    Mem_code: shouldNormalize
+      ? normalizeMemberCode(values[5] || "")
+      : values[5] || "",
     Category: values[6] || "",
     Volume_lt: values[7] || "",
     Fat_per: values[8] || "",

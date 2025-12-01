@@ -309,6 +309,9 @@ export default function MilkRecordsPage() {
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
+                <option value="2078">2078</option>
+                <option value="2079">2079</option>
+                <option value="2080">2080</option>
                 <option value="2081">2081</option>
                 <option value="2082">2082</option>
                 <option value="2083">2083</option>

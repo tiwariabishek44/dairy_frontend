@@ -240,10 +240,21 @@ export default function MilkRecordUploadPage() {
     await parseFileWithFilter(file, filterDate)
   }
 
-  // Convert filtered records array to XLSX file
+  // Convert filtered records array to XLSX file with lowercase headers
   const convertRecordsToXLSXFile = (records: MilkRecord[], date: string): File => {
+    // Convert records to have lowercase keys with underscores preserved
+    const recordsWithLowercaseKeys = records.map(record => {
+      const lowercaseRecord: any = {}
+      Object.keys(record).forEach(key => {
+        // Convert key to lowercase, keep underscores
+        const normalizedKey = key.toLowerCase()
+        lowercaseRecord[normalizedKey] = record[key as keyof MilkRecord]
+      })
+      return lowercaseRecord
+    })
+
     const workbook = XLSX.utils.book_new()
-    const worksheet = XLSX.utils.json_to_sheet(records)
+    const worksheet = XLSX.utils.json_to_sheet(recordsWithLowercaseKeys)
     XLSX.utils.book_append_sheet(workbook, worksheet, "Milk Records")
     const xlsxBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
     const blob = new Blob([xlsxBuffer], {

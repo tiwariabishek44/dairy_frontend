@@ -44,6 +44,20 @@ export interface ParseResult {
 }
 
 /**
+ * Normalize member code by removing leading zeros
+ * Examples: "0003" -> "3", "0125" -> "125", "3" -> "3"
+ */
+export function normalizeMemberCode(memCode: string): string {
+  if (!memCode) return memCode;
+
+  // Convert to string and remove leading zeros
+  const normalized = String(memCode).replace(/^0+/, "");
+
+  // If all zeros, return "0"
+  return normalized || "0";
+}
+
+/**
  * Optimized file parser using Web Worker for background processing
  * Features:
  * - Single-pass parsing (no double reading)
@@ -51,6 +65,7 @@ export interface ParseResult {
  * - Non-blocking (uses Web Worker)
  * - Memory efficient (filters during parse)
  * - Real-time progress updates
+ * - Normalizes Mem_code (removes leading zeros)
  */
 export class OptimizedFileParser {
   private worker: Worker | null = null;
@@ -138,6 +153,7 @@ export class OptimizedFileParser {
             fileName: file.name,
             filterDate,
             chunkSize: 1000, // Process 1000 rows at a time
+            normalizeMemberCode: true, // Enable Mem_code normalization
           });
         };
 
