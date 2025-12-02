@@ -234,12 +234,13 @@ export function validateFile(file: File): {
 } {
   // Check file type
   const extension = file.name.split(".").pop()?.toLowerCase();
-  const validExtensions = ["csv", "xlsx", "xls"];
+  const validExtensions = ["csv", "xlsx", "xls", "dbf"]; // Added DBF
 
   if (!extension || !validExtensions.includes(extension)) {
     return {
       valid: false,
-      error: "Invalid file type. Only CSV, XLSX, and XLS files are supported.",
+      error:
+        "Invalid file type. Only CSV, XLSX, XLS, and DBF files are supported.",
     };
   }
 

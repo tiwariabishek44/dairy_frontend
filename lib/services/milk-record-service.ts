@@ -1,4 +1,4 @@
-import { api } from "../api-client";
+import { api, ApiError } from "../api-client";
 import { authService } from "./auth-service";
 import {
   API_ENDPOINTS,
@@ -83,13 +83,32 @@ export const milkRecordService = {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await api.uploadFile<UploadResponse>(
-        API_ENDPOINTS.MILK_RECORDS.UPLOAD,
-        formData
-      );
+      // Use uploadLargeFile for files > 5MB, otherwise regular uploadFile
+      const fileSizeMB = file.size / (1024 * 1024);
+      const response =
+        fileSizeMB > 5
+          ? await api.uploadLargeFile<UploadResponse>(
+              API_ENDPOINTS.MILK_RECORDS.UPLOAD,
+              formData
+            )
+          : await api.uploadFile<UploadResponse>(
+              API_ENDPOINTS.MILK_RECORDS.UPLOAD,
+              formData
+            );
+
       return response;
     } catch (error: any) {
       console.error("Error uploading milk records:", error);
+
+      // Handle timeout specifically
+      if (error.status === 408 || error.data?.isTimeout) {
+        throw new ApiError(
+          408,
+          "Upload is taking longer than expected. Please check the records page in a moment to verify if the upload completed.",
+          { isTimeout: true }
+        );
+      }
+
       if (error.status === 401 || error.status === 403) {
         throw new Error("Authentication failed. Please login again.");
       }

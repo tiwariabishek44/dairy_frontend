@@ -3,6 +3,7 @@
 
 import * as XLSX from "xlsx";
 
+// TypeScript Interfaces
 export interface MilkRecord {
   Sr_no: string;
   Coll_Date: string;
@@ -32,7 +33,7 @@ interface ParseMessage {
   fileName: string;
   filterDate?: string;
   chunkSize?: number;
-  normalizeMemberCode?: boolean; // Add this flag
+  normalizeMemberCode?: boolean;
 }
 
 interface ProgressMessage {
@@ -58,8 +59,6 @@ interface ErrorMessage {
   type: "error";
   error: string;
 }
-
-type WorkerMessage = ProgressMessage | ResultMessage | ErrorMessage;
 
 /**
  * Normalize member code by removing leading zeros
@@ -111,6 +110,17 @@ self.onmessage = async (e: MessageEvent<ParseMessage>) => {
         result.dates.forEach((d) => allDates.add(d));
       } else if (extension === "xlsx" || extension === "xls") {
         const result = await parseExcelInChunks(
+          fileData,
+          filterDate,
+          chunkSize,
+          shouldNormalize
+        );
+        allRecords = result.allRecords;
+        filteredRecords = result.filteredRecords;
+        result.dates.forEach((d) => allDates.add(d));
+      } else if (extension === "dbf") {
+        // Add DBF parsing
+        const result = await parseDBFInChunks(
           fileData,
           filterDate,
           chunkSize,
@@ -291,6 +301,144 @@ async function parseExcelInChunks(
       );
 
       // Yield to event loop
+      await sleep(0);
+    }
+  }
+
+  postProgress(95, "Finalizing results...", "filtering");
+
+  return {
+    allRecords: [], // Don't return all records to save memory
+    filteredRecords,
+    dates,
+  };
+}
+
+/**
+ * Custom DBF Parser
+ * Parses DBF (dBase) files manually
+ */
+async function parseDBFFile(
+  buffer: ArrayBuffer
+): Promise<{ headers: string[]; rows: (string | number | undefined)[][] }> {
+  const dataView = new DataView(buffer);
+  const numRecords = dataView.getUint32(4, true);
+  const headerSize = dataView.getUint16(8, true);
+  const recordSize = dataView.getUint16(10, true);
+
+  const fieldDescriptors: { name: string; type: string; length: number }[] = [];
+  let offset = 32;
+
+  // Read field descriptors
+  while (offset < headerSize - 1) {
+    const fieldNameBytes = new Uint8Array(buffer, offset, 11);
+    const fieldName = String.fromCharCode(...fieldNameBytes)
+      .replace(/\0/g, "")
+      .trim();
+    if (fieldName === "" || fieldNameBytes[0] === 0x0d) break;
+
+    const fieldType = String.fromCharCode(dataView.getUint8(offset + 11));
+    const fieldLength = dataView.getUint8(offset + 16);
+
+    fieldDescriptors.push({
+      name: fieldName,
+      type: fieldType,
+      length: fieldLength,
+    });
+    offset += 32;
+  }
+
+  const headers = fieldDescriptors.map((f) => f.name);
+  const rows: (string | number | undefined)[][] = [];
+
+  // Read records
+  let recordOffset = headerSize;
+  for (let i = 0; i < numRecords; i++) {
+    const deletedFlag = dataView.getUint8(recordOffset);
+    if (deletedFlag === 0x2a) {
+      recordOffset += recordSize;
+      continue;
+    }
+
+    const row: (string | number | undefined)[] = [];
+    let fieldOffset = recordOffset + 1;
+
+    for (const field of fieldDescriptors) {
+      const fieldBytes = new Uint8Array(buffer, fieldOffset, field.length);
+      let value: string | number | undefined = String.fromCharCode(
+        ...fieldBytes
+      ).trim();
+
+      if (field.type === "N" || field.type === "F") {
+        const num = Number.parseFloat(value);
+        value = isNaN(num) ? value : num;
+      } else if (field.type === "D" && value.length === 8) {
+        // Convert YYYYMMDD to dd/mm/yyyy
+        const year = value.substring(0, 4);
+        const month = value.substring(4, 6);
+        const day = value.substring(6, 8);
+        value = `${day}/${month}/${year}`;
+      }
+
+      row.push(value);
+      fieldOffset += field.length;
+    }
+
+    rows.push(row);
+    recordOffset += recordSize;
+  }
+
+  return { headers, rows };
+}
+
+// DBF Parser with chunking
+async function parseDBFInChunks(
+  fileData: ArrayBuffer,
+  filterDate: string | undefined,
+  chunkSize: number,
+  shouldNormalize: boolean = true
+) {
+  postProgress(10, "Reading DBF file...", "reading");
+
+  // Parse DBF file using custom parser
+  const dbfData = await parseDBFFile(fileData);
+  const rows = dbfData.rows;
+
+  postProgress(30, "Parsing DBF data...", "parsing");
+
+  const filteredRecords: MilkRecord[] = [];
+  const dates = new Set<string>();
+
+  // Process records
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+
+    // Convert row array to values array (matching expected format)
+    const values = row.map((val) => String(val || "").trim());
+
+    // Ne_date is at index 2
+    const neDate = values[2] || "";
+    if (neDate) dates.add(neDate);
+
+    if (values.length >= 19) {
+      const milkRecord = createMilkRecord(values, shouldNormalize);
+
+      // Filter during parsing (single pass!)
+      if (!filterDate || neDate === filterDate) {
+        filteredRecords.push(milkRecord);
+      }
+    }
+
+    // Report progress every chunk
+    if (i % chunkSize === 0) {
+      const progress = 30 + Math.round((i / rows.length) * 60);
+      postProgress(
+        progress,
+        `Processing row ${i.toLocaleString()} of ${rows.length.toLocaleString()}...`,
+        "parsing"
+      );
+
+      // Yield to event loop to prevent blocking
       await sleep(0);
     }
   }

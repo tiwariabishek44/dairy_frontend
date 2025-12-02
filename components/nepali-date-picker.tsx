@@ -172,8 +172,7 @@ export function NepaliDatePicker({ value, onChange, onApply, placeholder = "Sele
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-full min-w-[350px] bg-white border-2 border-gray-200 rounded-xl shadow-lg overflow-hidden">
-          {/* Header */}
+        <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[350px] bg-white border-2 border-gray-200 rounded-xl shadow-lg overflow-hidden">          {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100 bg-white">
             <h3 className="text-sm font-semibold text-gray-800">
               {getDisplayDate() || "Select a date"}
